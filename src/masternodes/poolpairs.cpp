@@ -99,11 +99,12 @@ Res CPoolPairView::SetPoolPair(DCT_ID const & poolId, uint32_t height, CPoolPair
     && poolPairByID->idTokenB == pool.idTokenB
     && poolPairByTokens->idTokenA == pool.idTokenA
     && poolPairByTokens->idTokenB == pool.idTokenB) {
+        PoolHeightKey poolKey = {poolId, height};
         if (poolPairByID->reserveA != pool.reserveA
         || poolPairByID->reserveB != pool.reserveB) {
             WriteBy<ByReserves>(poolId, PoolReservesValue{pool.reserveA, pool.reserveB});
+            WriteBy<ByReservesHeight>(poolKey, PoolReservesValue{pool.reserveA, pool.reserveB});
         }
-        PoolHeightKey poolKey = {poolId, height};
         if (pool.swapEvent) {
             WriteBy<ByPoolSwap>(poolKey, PoolSwapValue{true, pool.blockCommissionA, pool.blockCommissionB});
         }

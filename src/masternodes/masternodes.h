@@ -364,7 +364,7 @@ class CCustomCSView
             CAccountsView           ::  ByBalanceKey, ByHeightKey, ByFuturesSwapKey,
             CCommunityBalancesView  ::  ById,
             CUndosView              ::  ByUndoKey,
-            CPoolPairView           ::  ByID, ByPair, ByShare, ByIDPair, ByPoolSwap, ByReserves, ByRewardPct, ByRewardLoanPct,
+            CPoolPairView           ::  ByID, ByPair, ByShare, ByIDPair, ByPoolSwap, ByReserves, ByReservesHeight, ByRewardPct, ByRewardLoanPct,
                                         ByPoolReward, ByDailyReward, ByCustomReward, ByTotalLiquidity, ByDailyLoanReward,
                                         ByPoolLoanReward, ByTokenDexFeePct,
             CGovView                ::  ByName, ByHeightVars,

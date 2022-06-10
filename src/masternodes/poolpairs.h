@@ -245,6 +245,7 @@ public:
     struct ByIDPair         { static constexpr uint8_t prefix() { return 'C'; } };
     struct ByPoolSwap       { static constexpr uint8_t prefix() { return 'P'; } };
     struct ByReserves       { static constexpr uint8_t prefix() { return 'R'; } };
+    struct ByReservesHeight { static constexpr uint8_t prefix() { return 'm'; } };
     struct ByRewardPct      { static constexpr uint8_t prefix() { return 'Q'; } };
     struct ByPoolReward     { static constexpr uint8_t prefix() { return 'I'; } };
     struct ByDailyReward    { static constexpr uint8_t prefix() { return 'B'; } };
