@@ -329,7 +329,7 @@ void CPoolPairView::GetPoolPairForBlocks(DCT_ID const & poolId, uint32_t begin, 
     // auto tokenIds = ReadBy<ByIDPair, ByPairKey>(poolId);
     // assert(tokenIds); // contract to verify pool data
 
-    boost::optional<CPoolPair> pool = ReadBy<ByID, CPoolPair>(poolId);
+    auto pool = ReadBy<ByID, CPoolPair>(poolId);
     if (!pool) {
         return;
     }
