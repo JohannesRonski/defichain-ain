@@ -224,6 +224,8 @@ public:
     std::optional<uint32_t> GetShare(DCT_ID const & poolId, CScript const & provider);
 
     void CalculatePoolRewards(DCT_ID const & poolId, std::function<CAmount()> onLiquidity, uint32_t begin, uint32_t end, std::function<void(RewardType, CTokenAmount, uint32_t)> onReward);
+    
+    void GetPoolPairForBlocks(DCT_ID const & poolId, uint32_t begin, uint32_t end, std::function<void(CPoolPair, uint32_t)> onPool);
 
     Res SetLoanDailyReward(const uint32_t height, const CAmount reward);
     Res SetDailyReward(uint32_t height, CAmount reward);

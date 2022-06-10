@@ -1256,11 +1256,151 @@ UniValue listpoolshares(const JSONRPCRequest& request) {
     return GetRPCResultCache().Set(request, ret);
 }
 
+UniValue getpoolpairhistory(const JSONRPCRequest& request) {
+    RPCHelpMan{"getpoolpairhistory",
+               "\nReturns information about pools.\n",
+               {
+                        {"options", RPCArg::Type::OBJ, RPCArg::Optional::NO, "",
+                            {
+                                 {"maxBlockHeight", RPCArg::Type::NUM, RPCArg::Optional::OMITTED,
+                                  "Optional height to iterate from (downto genesis block), (default = chaintip)."},
+                                 {"depth", RPCArg::Type::NUM, RPCArg::Optional::OMITTED,
+                                  "Maximum depth, from the genesis block is the default"},
+                                 {"token", RPCArg::Type::STR, RPCArg::Optional::OMITTED,
+                                  "token"},
+                                 {"limit", RPCArg::Type::NUM, RPCArg::Optional::OMITTED,
+                                  "Maximum number of records to return, 100 by default"},
+                            },
+                        },
+               },
+               RPCResult{
+                       "[{},{}...]     (array) Objects with pool history information\n"
+               },
+               RPCExamples{
+                       HelpExampleCli("getpoolpairhistory", "'{\"maxBlockHeight\":160,\"depth\":10}'")
+                       + HelpExampleRpc("getpoolpairhistory", "'{\"maxBlockHeight\":160,\"depth\":10}'")
+               },
+    }.Check(request);
+
+    bool verbose = true;
+
+    // // parse pagination
+    // size_t limit = 100;
+    // DCT_ID start{0};
+    // bool including_start = true;
+    // {
+    //     if (request.params.size() > 0) {
+    //         UniValue paginationObj = request.params[0].get_obj();
+    //         if (!paginationObj["limit"].isNull()) {
+    //             limit = (size_t) paginationObj["limit"].get_int64();
+    //         }
+    //         if (!paginationObj["start"].isNull()) {
+    //             including_start = false;
+    //             start.v = (uint32_t) paginationObj["start"].get_int();
+    //         }
+    //         if (!paginationObj["including_start"].isNull()) {
+    //             including_start = paginationObj["including_start"].getBool();
+    //         }
+    //         if (!including_start) {
+    //             ++start.v;
+    //         }
+    //     }
+    //     if (limit == 0) {
+    //         limit = std::numeric_limits<decltype(limit)>::max();
+    //     }
+    // }
+
+    uint32_t maxBlockHeight = std::numeric_limits<uint32_t>::max();
+    uint32_t depth = maxBlockHeight;
+    std::string tokenFilter;
+    uint32_t limit = 100;
+    
+    if (request.params.size() > 0) {
+        UniValue optionsObj = request.params[0].get_obj();
+        RPCTypeCheckObj(optionsObj,
+            {
+                {"maxBlockHeight", UniValueType(UniValue::VNUM)},
+                {"depth", UniValueType(UniValue::VNUM)},
+                {"token", UniValueType(UniValue::VSTR)},
+                {"limit", UniValueType(UniValue::VNUM)},
+            }, true, true);
+
+        if (!optionsObj["maxBlockHeight"].isNull()) {
+            maxBlockHeight = (uint32_t) optionsObj["maxBlockHeight"].get_int64();
+        }
+        if (!optionsObj["depth"].isNull()) {
+            depth = (uint32_t) optionsObj["depth"].get_int64();
+        }
+
+        if (!optionsObj["token"].isNull()) {
+            tokenFilter = optionsObj["token"].get_str();
+        }
+
+        if (!optionsObj["limit"].isNull()) {
+            limit = (uint32_t) optionsObj["limit"].get_int64();
+        }
+        if (limit == 0) {
+            limit = std::numeric_limits<decltype(limit)>::max();
+        }
+    }
+
+    LOCK(cs_main);
+
+    CCustomCSView view(*pcustomcsview);
+
+    UniValue ret(UniValue::VOBJ);
+
+    maxBlockHeight = std::min(maxBlockHeight, uint32_t(::ChainActive().Height()));
+    depth = std::min(depth, maxBlockHeight);
+    const auto startBlock = maxBlockHeight - depth;
+
+    if (!tokenFilter.empty()) {
+        DCT_ID poolId;
+        auto token = pcustomcsview->GetTokenGuessId(tokenFilter, poolId);
+        if (!token) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Pool not found");
+        }
+        view.GetPoolPairForBlocks(poolId, startBlock, maxBlockHeight, [&](CPoolPair pool, uint32_t height) {
+            ret.pushKV(std::to_string(height), poolToJSON(poolId, pool, *token, verbose));
+        });
+    } else {
+        for (auto height = startBlock; height < maxBlockHeight; height++) {
+            UniValue heightObj(UniValue::VOBJ);
+            pcustomcsview->ForEachPoolPair([&](DCT_ID const & id, CPoolPair p) {
+                const auto token = pcustomcsview->GetToken(id);
+                if (token) {
+                     view.GetPoolPairForBlocks(id, height, height + 1, [&](CPoolPair pool, uint32_t h) {
+                        heightObj.pushKVs(poolToJSON(id, pool, *token, verbose));
+                    });
+                }
+
+                return true;
+            },  DCT_ID{0});
+            ret.pushKV(std::to_string(height), heightObj);
+        }
+    }
+
+    // UniValue ret(UniValue::VOBJ);
+    // pcustomcsview->ForEachPoolPair([&](DCT_ID const & id, CPoolPair pool) {
+    //     const auto token = pcustomcsview->GetToken(id);
+    //     if (token) {
+    //         ret.pushKVs(poolToJSON(id, pool, *token, verbose));
+    //         limit--;
+    //     }
+
+    //     return limit != 0;
+    // }, start);
+
+    // return ret;
+    return ret;
+}
+
 static const CRPCCommand commands[] =
 {
 //  category        name                        actor (function)            params
 //  -------------   -----------------------     ---------------------       ----------
     {"poolpair",    "listpoolpairs",            &listpoolpairs,             {"pagination", "verbose"}},
+    {"poolpair",    "getpoolpairhistory",       &getpoolpairhistory,        {"options"}},
     {"poolpair",    "getpoolpair",              &getpoolpair,               {"key", "verbose" }},
     {"poolpair",    "addpoolliquidity",         &addpoolliquidity,          {"from", "shareAddress", "inputs"}},
     {"poolpair",    "removepoolliquidity",      &removepoolliquidity,       {"from", "amount", "inputs"}},
