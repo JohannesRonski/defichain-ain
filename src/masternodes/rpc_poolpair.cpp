@@ -1389,7 +1389,7 @@ UniValue getpoolpairhistory(const JSONRPCRequest& request) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Pool not found");
         }
         view.GetPoolPairForBlocks(poolId, startBlock, maxBlockHeight, [&](CPoolPair pool, uint32_t height) {
-            ret.pushKV(std::to_string(height), poolToJSON(poolId, pool, *token, verbose));
+            ret.pushKV(std::to_string(height), poolToJSON(*pcustomcsview, poolId, pool, *token, verbose));
         });
     } else {
         for (auto height = startBlock; height < maxBlockHeight; height++) {
@@ -1397,8 +1397,8 @@ UniValue getpoolpairhistory(const JSONRPCRequest& request) {
             pcustomcsview->ForEachPoolPair([&](DCT_ID const & id, CPoolPair p) {
                 const auto token = pcustomcsview->GetToken(id);
                 if (token) {
-                     view.GetPoolPairForBlocks(id, height, height + 1, [&](CPoolPair pool, uint32_t h) {
-                        heightObj.pushKVs(poolToJSON(id, pool, *token, verbose));
+                    view.GetPoolPairForBlocks(id, height, height + 1, [&](CPoolPair pool, uint32_t h) {
+                        heightObj.pushKVs(poolToJSON(*pcustomcsview, id, pool, *token, verbose));
                     });
                 }
 
@@ -1412,7 +1412,7 @@ UniValue getpoolpairhistory(const JSONRPCRequest& request) {
     // pcustomcsview->ForEachPoolPair([&](DCT_ID const & id, CPoolPair pool) {
     //     const auto token = pcustomcsview->GetToken(id);
     //     if (token) {
-    //         ret.pushKVs(poolToJSON(id, pool, *token, verbose));
+    //         ret.pushKVs(poolToJSON(*pcustomcsview, id, pool, *token, verbose));
     //         limit--;
     //     }
 
