@@ -15,7 +15,7 @@ depends/riscv64*
 
 .code
 .idea
-build
+#build
 
 *.tar.gz
 
@@ -102,7 +102,7 @@ qrc_*.cpp
 
 # Mac specific
 .DS_Store
-build
+#build
 
 #lcov
 *.gcno
