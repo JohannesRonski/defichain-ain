@@ -174,11 +174,11 @@ namespace {
                 if (value > 0) {
                     if (auto priceFeed = pcustomcsview->GetFixedIntervalPrice(token->fixedIntervalPriceId)) {
                         auto price = priceFeed.val->priceRecord[0];
-                        if (const auto interestCalculation = MultiplyAmounts(price, totalInterest); interestCalculation > 0) {
+                        if (const auto interestCalculation = MultiplyAmounts(price, totalInterest)) {
                             totalInterests += interestCalculation;
                         }
                         if (verbose) {
-                            if (height >= Params().GetConsensus().GreatWorldHeight) {
+                            if (height >= Params().GetConsensus().FortCanningGreatWorldHeight) {
                                 interestsPerBlockValueHighPrecision = InterestAddition(interestsPerBlockValueHighPrecision, {rate->interestPerBlock.negative, static_cast<base_uint<128>>(price) * rate->interestPerBlock.amount / COIN});
                                 interestsPerBlockHighPrecission[tokenId] = rate->interestPerBlock;
                             } else if (height >= Params().GetConsensus().FortCanningHillHeight) {
