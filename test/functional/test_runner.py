@@ -76,6 +76,7 @@ EXTENDED_SCRIPTS = [
     'wallet_hd.py',     # moved to ext due to heavy load for trevis
     'mempool_accept.py',# moved to ext due to heavy load for trevis
     'wallet_backup.py', # moved to ext due to heavy load for trevis
+    'feature_on_chain_government_govvar_update.py',
 ]
 
 BASE_SCRIPTS = [
@@ -126,6 +127,7 @@ BASE_SCRIPTS = [
     'feature_asymmetric_fee.py',
     'feature_token_split.py',
     'feature_token_split_mechanism.py',
+    'feature_commission_fix.py',
     'feature_token_split_usd_value.py',
     'feature_token_merge_usd_value.py',
     'feature_token_merge.py',
@@ -139,6 +141,7 @@ BASE_SCRIPTS = [
     'interface_defi_cli.py',
     'mempool_resurrect.py',
     'wallet_txn_doublespend.py --mineblock',
+    'feature_migrate_v1_in_futures.py',
     'tool_wallet.py',
     'wallet_txn_clone.py',
     'wallet_txn_clone.py --segwit',
@@ -298,7 +301,6 @@ BASE_SCRIPTS = [
     'feature_listaccounts_pagination.py',
     'feature_on_chain_government.py',
     'feature_on_chain_government_fee_distribution.py',
-    'feature_on_chain_government_govvar_update.py',
     'rpc_help.py',
     'feature_help.py',
     'feature_shutdown.py',

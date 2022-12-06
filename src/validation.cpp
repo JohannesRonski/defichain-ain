@@ -2118,7 +2118,7 @@ Res ApplyGeneralCoinbaseTx(CCustomCSView & mnview, CTransaction const & tx, int 
 
                 // Loan below FC and Options are unused and all go to Unallocated (burnt) pot.
                 if ((height < consensus.FortCanningHeight && kv.first == CommunityAccountType::Loan) ||
-                    kv.first == CommunityAccountType::Options)
+                    (height < consensus.GrandCentralHeight && kv.first == CommunityAccountType::Options))
                 {
                     res = mnview.AddCommunityBalance(CommunityAccountType::Unallocated, subsidy);
                     if (res)
@@ -2126,17 +2126,41 @@ Res ApplyGeneralCoinbaseTx(CCustomCSView & mnview, CTransaction const & tx, int 
                 }
                 else
                 {
-                    if (height >= consensus.GrandCentralHeight && kv.first == CommunityAccountType::CommunityDevFunds)
+                    if (height >= consensus.GrandCentralHeight)
                     {
-                        CDataStructureV0 enabledKey{AttributeTypes::Param, ParamIDs::Feature, DFIPKeys::GovernanceEnabled};
+                        const auto attributes = mnview.GetAttributes();
+                        assert(attributes);
 
-                        auto attributes = mnview.GetAttributes();
-                        if (!attributes) {
-                            return Res::ErrDbg("attributes-not-found", "Critical error!");
-                        }
-                        if (!attributes->GetValue(enabledKey, false))
-                        {
-                            mnview.AddBalance(consensus.foundationShareScript, {DCT_ID{0}, subsidy});
+                        if (kv.first == CommunityAccountType::CommunityDevFunds) {
+                            CDataStructureV0 enabledKey{AttributeTypes::Param, ParamIDs::Feature, DFIPKeys::GovernanceEnabled};
+
+                            if (!attributes->GetValue(enabledKey, false))
+                            {
+                                res = mnview.AddBalance(consensus.foundationShareScript, {DCT_ID{0}, subsidy});
+                                LogPrint(BCLog::ACCOUNTCHANGE, "AccountChange: txid=%s addr=%s change=%s\n",
+                                         tx.GetHash().ToString(), ScriptToString(consensus.foundationShareScript),
+                                         (CBalances{{{{0}, subsidy}}}.ToString()));
+                                nonUtxoTotal += subsidy;
+
+                                continue;
+                            }
+                        } else if (kv.first == CommunityAccountType::Unallocated || kv.first == CommunityAccountType::Options) {
+                            CDataStructureV0 enabledKey{AttributeTypes::Param, ParamIDs::Feature, DFIPKeys::EmissionUnusedFund};
+
+                            if (attributes->GetValue(enabledKey, false)) {
+                                res = mnview.AddBalance(consensus.unusedEmission, {DCT_ID{0}, subsidy});
+                                if (res) {
+                                    LogPrint(BCLog::ACCOUNTCHANGE, "AccountChange: txid=%s addr=%s change=%s\n",
+                                             tx.GetHash().ToString(), ScriptToString(consensus.unusedEmission),
+                                             (CBalances{{{{0}, subsidy}}}.ToString()));
+                                }
+                            } else {
+                                // Previous behaviour was for Options and Unallocated to go to Unallocated
+                                res = mnview.AddCommunityBalance(CommunityAccountType::Unallocated, subsidy);
+                                if (res)
+                                    LogPrint(BCLog::ACCOUNTCHANGE, "AccountChange: txid=%s fund=%s change=%s\n", tx.GetHash().ToString(), GetCommunityAccountName(CommunityAccountType::Unallocated), (CBalances{{{{0}, subsidy}}}.ToString()));
+                            }
+
                             nonUtxoTotal += subsidy;
 
                             continue;
@@ -2530,6 +2554,17 @@ bool StopOrInterruptConnect(const CBlockIndex *pIndex, CValidationState& state) 
     return false;
 }
 
+static void LogApplyCustomTx(const CTransaction &tx, const int64_t start) {
+    // Only log once for one of the following categories. Log BENCH first for consistent formatting.
+    if (LogAcceptCategory(BCLog::BENCH)) {
+        std::vector<unsigned char> metadata;
+        LogPrint(BCLog::BENCH, "    - ApplyCustomTx: %s Type: %s Time: %.2fms\n", tx.GetHash().ToString(), ToString(GuessCustomTxType(tx, metadata, false)), (GetTimeMicros() - start) * MILLI);
+    } else if (LogAcceptCategory(BCLog::CUSTOMTXBENCH)) {
+        std::vector<unsigned char> metadata;
+        LogPrint(BCLog::CUSTOMTXBENCH, "Bench::ApplyCustomTx: %s Type: %s Time: %.2fms\n", tx.GetHash().ToString(), ToString(GuessCustomTxType(tx, metadata, false)), (GetTimeMicros() - start) * MILLI);
+    }
+}
+
 /** Apply the effects of this block (with given index) on the UTXO set represented by coins.
  *  Validity checks that depend on the UTXO set are also done; ConnectBlock ()
  *  can fail if those validity checks fail (among other reasons). */
@@ -2648,9 +2683,9 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
                                                                            __func__, nodeId->ToString(), nodePtr->mintedBlocks + 1, block.mintedBlocks), REJECT_INVALID, "bad-minted-blocks");
         }
         uint256 stakeModifierPrevBlock = pindex->pprev == nullptr ? uint256() : pindex->pprev->stakeModifier;
-        const CKeyID key = pindex->nHeight >= chainparams.GetConsensus().GrandCentralHeight ? nodePtr->ownerAuthAddress : nodePtr->operatorAuthAddress;
-        const auto stakeModifier = pos::ComputeStakeModifier(stakeModifierPrevBlock, key);
-        if (block.stakeModifier != stakeModifier) {            return state.Invalid(
+        const auto stakeModifier = pos::ComputeStakeModifier(stakeModifierPrevBlock, nodePtr->operatorAuthAddress);
+        if (block.stakeModifier != stakeModifier) {
+            return state.Invalid(
                     ValidationInvalidReason::CONSENSUS,
                     error("%s: block's stake Modifier should be %d, got %d!",
                             __func__, block.stakeModifier.ToString(), pos::ComputeStakeModifier(stakeModifierPrevBlock, nodePtr->operatorAuthAddress).ToString()),
@@ -2878,7 +2913,9 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
             }
 
             CHistoryWriters writers{paccountHistoryDB.get(), pburnHistoryDB.get(), pvaultHistoryDB.get()};
+            const auto applyCustomTxTime = GetTimeMicros();
             const auto res = ApplyCustomTx(accountsView, view, tx, chainparams.GetConsensus(), pindex->nHeight, pindex->GetBlockTime(), nullptr, i, &writers);
+            LogApplyCustomTx(tx, applyCustomTxTime);
             if (!res.ok && (res.code & CustomTxErrCodes::Fatal)) {
                 if (pindex->nHeight >= chainparams.GetConsensus().EunosHeight) {
                     return state.Invalid(ValidationInvalidReason::CONSENSUS,
@@ -2953,7 +2990,7 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
     int64_t nTime3 = GetTimeMicros(); nTimeConnect += nTime3 - nTime2;
     LogPrint(BCLog::BENCH, "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) [%.2fs (%.2fms/blk)]\n", (unsigned)block.vtx.size(), MILLI * (nTime3 - nTime2), MILLI * (nTime3 - nTime2) / block.vtx.size(), nInputs <= 1 ? 0 : MILLI * (nTime3 - nTime2) / (nInputs-1), nTimeConnect * MICRO, nTimeConnect * MILLI / nBlocksTotal);
 
-    // chek main coinbase
+    // check main coinbase
     Res res = ApplyGeneralCoinbaseTx(accountsView, *block.vtx[0], pindex->nHeight, nFees, chainparams.GetConsensus());
     if (!res.ok) {
         return state.Invalid(ValidationInvalidReason::CONSENSUS,
@@ -4233,36 +4270,14 @@ void CChainState::ProcessProposalEvents(const CBlockIndex* pindex, CCustomCSView
             }
         }
 
-        CDataStructureV0 minVoting{AttributeTypes::Governance, GovernanceIDs::Proposals, GovernanceKeys::MinVoters};
-        CDataStructureV0 vocEmergencyQuorumKey{AttributeTypes::Governance, GovernanceIDs::Proposals, GovernanceKeys::VOCEmergencyQuorum};
 
-        bool emergency = prop.options & CPropOption::Emergency;
-        uint64_t quorum;
-        if (prop.type == CPropType::VoteOfConfidence && emergency) {
-            quorum = attributes->GetValue(vocEmergencyQuorumKey, COIN / 10) / 10000;
-        } else {
-            quorum = attributes->GetValue(minVoting, chainparams.GetConsensus().props.minVoting) / 10000;
-        }
-
-        if (lround(voters.size() * 10000.f / activeMasternodes.size()) <= quorum) {
+        if (lround(voters.size() * 10000.f / activeMasternodes.size()) <= prop.quorum) {
             cache.UpdatePropStatus(propId, pindex->nHeight, CPropStatusType::Rejected);
             return true;
         }
 
-        uint32_t majorityThreshold{};
-        CDataStructureV0 cfpMajority{AttributeTypes::Governance, GovernanceIDs::Proposals, GovernanceKeys::CFPMajority};
-        CDataStructureV0 vocMajority{AttributeTypes::Governance, GovernanceIDs::Proposals, GovernanceKeys::VOCMajority};
 
-        switch(prop.type) {
-            case CPropType::CommunityFundProposal:
-                majorityThreshold = attributes->GetValue(cfpMajority, chainparams.GetConsensus().props.cfp.majorityThreshold) / 10000;
-                break;
-            case CPropType::VoteOfConfidence:
-                majorityThreshold = attributes->GetValue(vocMajority, chainparams.GetConsensus().props.voc.majorityThreshold) / 10000;
-                break;
-        }
-
-        if (lround(voteYes * 10000.f / voters.size()) <= majorityThreshold) {
+        if (lround(voteYes * 10000.f / voters.size()) <= prop.approvalThreshold) {
             cache.UpdatePropStatus(propId, pindex->nHeight, CPropStatusType::Rejected);
             return true;
         }
@@ -4274,7 +4289,7 @@ void CChainState::ProcessProposalEvents(const CBlockIndex* pindex, CCustomCSView
             cache.UpdatePropCycle(propId, prop.cycle + 1);
         }
 
-        CDataStructureV0 payoutKey{AttributeTypes::Governance, GovernanceIDs::Proposals, GovernanceKeys::CFPPayout};
+        CDataStructureV0 payoutKey{AttributeTypes::Param, ParamIDs::Feature, DFIPKeys::CFPPayout};
 
         if (prop.type == CPropType::CommunityFundProposal && attributes->GetValue(payoutKey, false)) {
             auto res = cache.SubCommunityBalance(CommunityAccountType::CommunityDevFunds, prop.nAmount);
@@ -5122,6 +5137,9 @@ void CChainState::ProcessTokenSplits(const CBlock& block, const CBlockIndex* pin
         CDataStructureV0 descendantKey{AttributeTypes::Token, oldTokenId.v, TokenKeys::Descendant};
         attributes->SetValue(descendantKey, DescendantValue{newTokenId.v, static_cast<int32_t>(pindex->nHeight)});
 
+        MigrateV1Remnants(cache, *attributes, EconomyKeys::DFIP2203Current, oldTokenId, newTokenId, multiplier);
+        MigrateV1Remnants(cache, *attributes, EconomyKeys::DFIP2203Burned, oldTokenId, newTokenId, multiplier);
+        MigrateV1Remnants(cache, *attributes, EconomyKeys::DFIP2203Minted, oldTokenId, newTokenId, multiplier);
         MigrateV1Remnants(cache, *attributes, EconomyKeys::BatchRoundingExcess, oldTokenId, newTokenId, multiplier, ParamIDs::Auction);
         MigrateV1Remnants(cache, *attributes, EconomyKeys::ConsolidatedInterest, oldTokenId, newTokenId, multiplier, ParamIDs::Auction);
 
